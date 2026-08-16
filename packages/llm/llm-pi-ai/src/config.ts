@@ -3,12 +3,12 @@
  * Profiles are a dict keyed by provider route, so the composition base and a
  * user-settings layer merge per provider and the route set is structural.
  *
- * A route key is not required to name an installed pi-ai provider. When it does,
- * that provider's endpoint, protocol, display name, and model catalog are the
- * profile's defaults and the profile overrides them field by field; when it does
- * not, the profile is the whole provider declaration. Resolution therefore ends
- * in a built pi-ai `Provider` per route: everything a request needs is decided
- * once, while the configuration key that made a route unserviceable can still be
+ * A route key is not required to name an installed catalog provider. When it
+ * does, that provider's endpoint, protocol, and model catalog are the profile's
+ * defaults and the profile overrides them field by field; when it does not, the
+ * profile is the whole provider declaration. Resolution therefore ends in a
+ * built pi-ai `Provider` per route: everything a request needs is decided once,
+ * while the configuration key that made a route unserviceable can still be
  * named in the failure.
  *
  * @module dsh-llm-pi-ai/config
@@ -21,7 +21,9 @@ import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
 import type { ResolvedRetryPolicy, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
-import { MODALITIES, resolveRouteModels, SUPPORTED_THINKING_FORMATS, THINKING_LEVELS } from './catalog.ts'
+import {
+  catalogDisplayName, MODALITIES, resolveRouteModels, SUPPORTED_THINKING_FORMATS, THINKING_LEVELS,
+} from './catalog.ts'
 import type {
   PiAiCompatProfile,
   PiAiModality,
@@ -332,10 +334,10 @@ export function resolveProfiles(
     if (defaultInput.length === 0) {
       throw new Error(`llm-pi-ai: provider "${provider}" defaultInput must name at least one modality`)
     }
-    // The route key, not the installed provider's own name: the directory has
-    // always shown route keys, and a catalog route must not silently rename
-    // itself on every configuration surface just because it gained a profile.
-    const displayName = source.displayName ?? provider
+    // Overlay routes own a display name this package chose. pi-ai catalog
+    // routes still show the route key: using the installed provider's name
+    // would rename every card the moment it gained a profile.
+    const displayName = source.displayName ?? catalogDisplayName(provider) ?? provider
     const catalog = resolveRouteModels({
       provider,
       ...source.api === undefined ? {} : { api: source.api },

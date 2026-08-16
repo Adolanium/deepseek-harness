@@ -14,7 +14,7 @@
 
 ## 添加目录提供方
 
-选择**添加提供方**，选取 Anthropic 或 OpenAI 等提供方，输入其 API 密钥并保存。已安装目录会提供端点、协议和模型列表。
+选择**添加提供方**，选取 Anthropic、OpenAI 或 Nous Research 等提供方，输入其 API 密钥并保存。已安装目录会提供端点、协议和模型列表。
 
 使用原生认证的提供方需要各自的原生凭据。Bedrock、Vertex、Azure 和 Codex 分别使用 AWS 凭据与区域、ADC 项目、`api-version` 和 OAuth；只填写 API 密钥字段无法完成配置。
 

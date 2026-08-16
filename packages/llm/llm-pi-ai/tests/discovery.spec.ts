@@ -5,7 +5,9 @@ import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { userAgent } from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
+import { catalogModels } from '../src/catalog.ts'
 import { discoverModels } from '../src/discovery.ts'
+import { NOUS_PROVIDER } from '../src/known.ts'
 
 const servers: Server[] = []
 /** Credential variables a test set, cleared so the next one starts unset. */
@@ -90,6 +92,16 @@ describe('catalog-route model discovery', () => {
   it('needs no endpoint for a route the catalog describes', async () => {
     const ctx = await harness()
     await expect(ctx.llm.discoverModels('llm-pi-ai', { provider: 'deepseek' })).resolves.not.toHaveLength(0)
+  })
+
+  it('answers an overlay route from the installed catalog, with no network call', async () => {
+    const server = await listingServer({ body: JSON.stringify({ data: [{ id: 'from-the-endpoint' }] }) })
+    const ctx = await harness()
+
+    const models = await ctx.llm.discoverModels('llm-pi-ai', { provider: NOUS_PROVIDER, baseURL: server.url })
+    expect(models.map(model => model.id)).toEqual([...catalogModels(NOUS_PROVIDER).keys()])
+    expect(models.every(model => model.contextWindow === 128_000 && model.maxTokens === 32_000)).toBe(true)
+    expect(server.paths).toEqual([])
   })
 
   it('says where a route the catalog does not describe must get its models', async () => {

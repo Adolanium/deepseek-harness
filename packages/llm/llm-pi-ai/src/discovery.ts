@@ -197,7 +197,8 @@ export async function discoverModels(
   storedApiKey?: () => Promise<string | undefined>,
 ): Promise<readonly LlmDiscoveredModel[]> {
   // A catalog route already has its answer, and a better one: the installed
-  // entries carry context windows and output caps no listing endpoint reports.
+  // catalog entries carry context windows and output caps no listing endpoint
+  // reports.
   if (request.provider !== undefined) {
     const installed = catalogModels(request.provider)
     if (installed.size > 0) {

@@ -1,9 +1,9 @@
 /**
  * Generic pi-ai-backed LLM adapter plugin. One plugin instance owns a dict of
- * provider routes; a route naming an installed pi-ai provider inherits that
+ * provider routes; a route naming an installed catalog provider inherits that
  * provider's endpoint, protocol, and model catalog as defaults, and a route
- * pi-ai does not ship is declared outright. Profile facts resolve per request
- * over the optional `llm-pi-ai` user-settings section and the optional
+ * the catalog does not ship is declared outright. Profile facts resolve per
+ * request over the optional `llm-pi-ai` user-settings section and the optional
  * credential seam, so a changed key, endpoint, model, or knob reaches the next
  * request without a restart; a changed *route set* (or a route's
  * registration-captured retry policy) re-registers the same adapter instance
@@ -20,6 +20,9 @@
  *         retryPolicy:
  *           mode: normal
  *           maxRetries: 2
+ *       # Catalog overlay: endpoint and Hermes models come from this package.
+ *       nous:
+ *         apiKeyEnv: NOUS_API_KEY
  *       # Catalog route with the catalog narrowed and one capacity corrected.
  *       anthropic:
  *         apiKeyEnv: ANTHROPIC_API_KEY
@@ -61,7 +64,7 @@ import { assertUsableApiKey, LlmError } from '@deepseek-ai/dsh-llm'
 import type { AdapterRegistrationHandle, DirectoryRegistrationHandle, LlmConfigurableProvider } from '@deepseek-ai/dsh-llm'
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { PiAiAdapter } from './adapter.ts'
-import { catalogProviderIds, catalogProviderTakesApiKey } from './catalog.ts'
+import { catalogDisplayName, catalogProviderIds, catalogProviderTakesApiKey } from './catalog.ts'
 import { assertServiceable, Config, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
@@ -130,7 +133,7 @@ function directoryEntries(
       settingsPath: ['providers', provider],
       // Membership of the installed catalog, not of the settings document:
       // narrowing a shipped provider's models stores a profile too, and that
-      // route is still one pi-ai knows.
+      // route is still one the catalog describes.
       declared: !catalog.has(provider),
     })
   }
@@ -138,9 +141,11 @@ function directoryEntries(
   // to authenticate with, so offering it would put a card on the settings page
   // whose own posture — no key, credentials discovered by the provider — fails
   // every request. Catalog *membership* is unaffected, so `declare` above still
-  // answers what pi-ai ships.
+  // answers what the catalog ships.
   for (const provider of catalog) {
-    if (catalogProviderTakesApiKey(provider)) declare(provider, provider)
+    if (catalogProviderTakesApiKey(provider)) {
+      declare(provider, catalogDisplayName(provider) ?? provider)
+    }
   }
   for (const [provider, profile] of profiles) declare(provider, profile.displayName)
   return [...entries.values()]

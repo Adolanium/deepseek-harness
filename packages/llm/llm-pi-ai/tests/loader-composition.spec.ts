@@ -20,6 +20,7 @@ import LlmRuntime from '@deepseek-ai/dsh-llm'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
+import { NOUS_DISPLAY_NAME, NOUS_PROVIDER } from '../src/known.ts'
 import { assemble } from './assemble.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
 
@@ -111,6 +112,38 @@ describe('llm-pi-ai real dormant composition', () => {
 
     const result = await assemble(ctx, { provider: 'deepseek', model: 'deepseek-v4-flash', messages: [] })
     expect(result.message.content).toEqual([{ type: 'text', text: 'hello' }])
+    expect(server.headers[0]?.authorization).toBe('Bearer key-from-store')
+  })
+
+  it('offers the nous overlay while dormant and serves it once settings name a key', async () => {
+    vi.stubEnv('PI_COMPOSITION_KEY', '')
+    const server = await mockServer([{ events: textEvents }])
+    const { ctx, settingsPath } = await loadComposition()
+
+    expect(ctx.llm.listConfigurableProviders()).toContainEqual({
+      provider: NOUS_PROVIDER,
+      displayName: NOUS_DISPLAY_NAME,
+      settingsNs: 'llm-pi-ai',
+      settingsPath: ['providers', NOUS_PROVIDER],
+      declared: false,
+    })
+    expect(ctx.llm.listProviders()).toEqual([])
+
+    await writeFile(settingsPath, [
+      'llm-pi-ai:',
+      '  providers:',
+      `    ${NOUS_PROVIDER}:`,
+      '      apiKeyEnv: PI_COMPOSITION_KEY',
+      `      baseURL: ${server.url}/v1`,
+      '',
+    ].join('\n'))
+    await vi.waitFor(() => {
+      expect(ctx.llm.listProviders().map(provider => provider.id)).toEqual([NOUS_PROVIDER])
+    }, { timeout: 5000 })
+
+    const result = await assemble(ctx, { provider: NOUS_PROVIDER, model: 'Hermes-4.3-36B', messages: [] })
+    expect(result.finish).toEqual({ kind: 'stop' })
+    expect(server.paths).toEqual(['/v1/chat/completions'])
     expect(server.headers[0]?.authorization).toBe('Bearer key-from-store')
   })
 })

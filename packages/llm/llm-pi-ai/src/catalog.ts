@@ -1,9 +1,9 @@
 /**
- * Materialization of one provider route's model catalog. The installed pi-ai
- * catalog supplies defaults keyed by model id, and a profile's own model
- * entries override them field by field, so a route naming a catalog provider
- * stays configuration-free while a route pi-ai has never heard of is fully
- * describable from `settings.yaml`.
+ * Materialization of one provider route's model catalog. The installed catalog
+ * — pi-ai's builtins plus the overlays in `known.ts` — supplies defaults keyed
+ * by model id, and a profile's own model entries override them field by field,
+ * so a route naming a catalog provider stays configuration-free while a route
+ * the catalog has never heard of is fully describable from `settings.yaml`.
  *
  * Every pi-ai `Model` field the harness cannot default is required here rather
  * than at request time: an unserviceable route fails while its configuration is
@@ -14,6 +14,9 @@
 
 import { builtinProviders, getBuiltinModels, getBuiltinProviders } from '@earendil-works/pi-ai/providers/all'
 import type { BuiltinProvider } from '@earendil-works/pi-ai/providers/all'
+import { knownProviders } from './known.ts'
+
+export { catalogDisplayName } from './known.ts'
 import type {
   Api,
   Model,
@@ -116,11 +119,17 @@ let providerIndex: Map<string, Provider> | undefined
 /**
  * Installed catalog providers by id, constructed once. Each entry owns the API
  * implementations for its own models, which is why a catalog route reuses this
- * provider instead of being rebuilt from parts.
+ * provider instead of being rebuilt from parts. Overlay ids already present in
+ * the builtin registry are skipped so a later pi-ai release that ships the
+ * same route keeps its own provider.
  * @returns the catalog provider index.
  */
 function catalogProviders(): Map<string, Provider> {
-  providerIndex ??= new Map(builtinProviders().map(provider => [provider.id, provider]))
+  if (providerIndex !== undefined) return providerIndex
+  providerIndex = new Map(builtinProviders().map(provider => [provider.id, provider]))
+  for (const overlay of knownProviders()) {
+    if (!providerIndex.has(overlay.id)) providerIndex.set(overlay.id, overlay)
+  }
   return providerIndex
 }
 
@@ -134,11 +143,14 @@ export function catalogProvider(provider: string): Provider | undefined {
 }
 
 /**
- * Every provider route the installed pi-ai catalog ships.
+ * Every provider route the installed catalog ships: pi-ai builtins first,
+ * then overlays whose ids the builtin registry does not already claim.
  * @returns the catalog provider ids.
  */
 export function catalogProviderIds(): readonly string[] {
-  return getBuiltinProviders()
+  const builtin = getBuiltinProviders()
+  const claimed = new Set<string>(builtin)
+  return [...builtin, ...knownProviders().flatMap(overlay => claimed.has(overlay.id) ? [] : [overlay.id])]
 }
 
 /**
@@ -167,7 +179,11 @@ export function catalogProviderTakesApiKey(provider: string): boolean {
  * @returns catalog models by id; empty for a route pi-ai does not ship.
  */
 export function catalogModels(provider: string): Map<string, Model<Api>> {
-  if (!catalogProviders().has(provider)) return new Map()
+  const catalog = catalogProvider(provider)
+  if (catalog === undefined) return new Map()
+  if (!(getBuiltinProviders() as readonly string[]).includes(provider)) {
+    return new Map(catalog.getModels().map(model => [model.id, model]))
+  }
   const models = getBuiltinModels(provider as BuiltinProvider) as Model<Api>[]
   return new Map(models.map(model => [model.id, model]))
 }

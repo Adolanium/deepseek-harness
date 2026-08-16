@@ -12,7 +12,11 @@ import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 import { createModels, getSupportedThinkingLevels } from '@earendil-works/pi-ai'
 import type { Api, Model, OpenAICompletionsCompat, Provider } from '@earendil-works/pi-ai'
+import {
+  catalogModels, catalogProvider, catalogProviderIds, catalogProviderTakesApiKey,
+} from '../src/catalog.ts'
 import { resolveProfiles } from '../src/config.ts'
+import { NOUS_BASE_URL, NOUS_DISPLAY_NAME, NOUS_PROVIDER } from '../src/known.ts'
 import { buildProvider, supportedProtocols } from '../src/provider.ts'
 import { assemble } from './assemble.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
@@ -883,6 +887,72 @@ describe('resolution snapshots', () => {
   })
 })
 
+describe('nous catalog overlay', () => {
+  it('ships the official Hermes models on the documented endpoint', () => {
+    expect(catalogProviderIds()).toContain(NOUS_PROVIDER)
+    expect(catalogProviderTakesApiKey(NOUS_PROVIDER)).toBe(true)
+    const provider = catalogProvider(NOUS_PROVIDER)
+    expect(provider?.name).toBe(NOUS_DISPLAY_NAME)
+    expect(provider?.baseUrl).toBe(NOUS_BASE_URL)
+
+    const models = [...catalogModels(NOUS_PROVIDER).values()]
+    expect(models.map(model => model.id)).toEqual([
+      'Hermes-4.3-36B',
+      'Hermes-4-70B',
+      'Hermes-4-405B',
+    ])
+    expect(models.every(model => model.api === 'openai-completions')).toBe(true)
+    expect(models.every(model => model.baseUrl === NOUS_BASE_URL)).toBe(true)
+    expect(models.every(model => model.contextWindow === 128_000)).toBe(true)
+    expect(models.every(model => model.maxTokens === 32_000)).toBe(true)
+    expect(models.every(model => !model.reasoning)).toBe(true)
+  })
+
+  it('resolves a credential-only profile against the overlay catalog', async () => {
+    const defaults = resolveProfiles({ [NOUS_PROVIDER]: { apiKeyEnv: KEY_ENV } }).get(NOUS_PROVIDER)
+    expect(defaults?.displayName).toBe(NOUS_DISPLAY_NAME)
+    expect(defaults?.piProvider.baseUrl).toBe(NOUS_BASE_URL)
+    expect((defaults?.piProvider.getModels() ?? []).every(model => model.baseUrl === NOUS_BASE_URL)).toBe(true)
+
+    const server = await mockServer([{ events: textEvents }])
+    const resolved = resolveProfiles({
+      [NOUS_PROVIDER]: { apiKeyEnv: KEY_ENV, baseURL: `${server.url}/v1` },
+    })
+    const profile = resolved.get(NOUS_PROVIDER)
+    expect((profile?.piProvider.getModels() ?? []).map(model => model.id)).toEqual([
+      'Hermes-4.3-36B',
+      'Hermes-4-70B',
+      'Hermes-4-405B',
+    ])
+
+    const ctx = await harness({
+      providers: { [NOUS_PROVIDER]: { apiKeyEnv: KEY_ENV, baseURL: `${server.url}/v1` } },
+    })
+    const result = await assemble(ctx, {
+      provider: NOUS_PROVIDER,
+      model: 'Hermes-4.3-36B',
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'hi' }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    })
+    expect(result.finish).toEqual({ kind: 'stop' })
+    expect(server.paths).toEqual(['/v1/chat/completions'])
+    expect(server.headers[0]?.authorization).toBe('Bearer test-key')
+  })
+
+  it('offers the overlay as a catalog route, not a hand-declared one', async () => {
+    const ctx = await harness({})
+    expect(ctx.llm.listConfigurableProviders()).toContainEqual({
+      provider: NOUS_PROVIDER,
+      displayName: NOUS_DISPLAY_NAME,
+      settingsNs: 'llm-pi-ai',
+      settingsPath: ['providers', NOUS_PROVIDER],
+      declared: false,
+    })
+  })
+})
+
 describe('configurable-provider directory', () => {
   it('keeps the previous directory when a route collides with another adapter family', async () => {
     const dir = await home()
@@ -950,6 +1020,7 @@ describe('configurable-provider directory', () => {
     // the key is a path this adapter can serve.
     expect(offered).toContain('anthropic')
     expect(offered).toContain('openai')
+    expect(offered).toContain(NOUS_PROVIDER)
   })
 
   it('still lists a withheld route a stored profile names, as a catalog route', async () => {
